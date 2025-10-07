@@ -1,0 +1,38 @@
+import tensorflow as tf
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Flatten
+from tensorflow.keras.utils import to_categorical
+
+# 1. Load the MNIST dataset
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+# 2. Normalize input data (scale pixel values to [0, 1])
+x_train = x_train.astype('float32') / 255.0
+x_test = x_test.astype('float32') / 255.0
+
+# 3. One-hot encode labels
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# 4. Define the multi-layer neural network model
+model = Sequential([
+    Flatten(input_shape=(28, 28)),        # Flatten 28x28 images into vectors of length 784
+    Dense(128, activation='relu'),        # First hidden layer with 128 neurons and ReLU activation
+    Dense(64, activation='relu'),         # Second hidden layer with 64 neurons and ReLU activation
+    Dense(10, activation='softmax')       # Output layer with 10 neurons (one for each digit)
+])
+
+# 5. Compile the model
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# 6. Train the model
+model.fit(x_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+
+# 7. Evaluate the model on test data
+test_loss, test_acc = model.evaluate(x_test, y_test, verbose=2)
+print(f'\nTest accuracy: {test_acc:.4f}')
+
+	
