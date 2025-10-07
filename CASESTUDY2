@@ -1,0 +1,110 @@
+# ============================================================
+# Credit Card Fraud Detection using Autoencoder
+# ============================================================
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.optimizers import Adam
+import urllib.request
+import zipfile
+
+# ============================================================
+# STEP 1: DOWNLOAD DATASET (if not already present)
+# ============================================================
+if not os.path.exists("creditcard.csv"):
+    print("Downloading dataset... ⏬")
+    url = "https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv"
+    urllib.request.urlretrieve(url, "creditcard.csv")
+    print("Dataset downloaded successfully ✅")
+
+# ============================================================
+# STEP 2: LOAD AND PREPROCESS DATA
+# ============================================================
+print("Loading dataset...")
+data = pd.read_csv("creditcard.csv")
+
+# Separate normal and fraud transactions
+normal = data[data['Class'] == 0]
+fraud = data[data['Class'] == 1]
+
+print(f"Total Transactions: {len(data)}")
+print(f"Normal: {len(normal)}, Fraud: {len(fraud)}")
+
+# Prepare feature data
+X = data.drop('Class', axis=1)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Split data into training and testing
+X_train, X_test = train_test_split(X_scaled, test_size=0.2, random_state=42)
+
+# Train only on normal transactions
+X_train_normal = normal.drop('Class', axis=1)
+X_train_normal = scaler.transform(X_train_normal)
+
+# ============================================================
+# STEP 3: BUILD AUTOENCODER MODEL
+# ============================================================
+input_dim = X_train_normal.shape[1]
+input_layer = Input(shape=(input_dim,))
+encoded = Dense(16, activation='relu')(input_layer)
+encoded = Dense(8, activation='relu')(encoded)
+decoded = Dense(16, activation='relu')(encoded)
+output_layer = Dense(input_dim, activation='sigmoid')(decoded)
+
+autoencoder = Model(inputs=input_layer, outputs=output_layer)
+autoencoder.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
+
+# ============================================================
+# STEP 4: TRAIN AUTOENCODER
+# ============================================================
+print("Training Autoencoder Model...")
+history = autoencoder.fit(
+    X_train_normal,
+    X_train_normal,
+    epochs=10,
+    batch_size=256,
+    validation_split=0.1,
+    shuffle=True,
+    verbose=1
+)
+
+# ============================================================
+# STEP 5: EVALUATE ON TEST DATA
+# ============================================================
+print("Evaluating model on test data...")
+X_pred = autoencoder.predict(X_test)
+mse = np.mean(np.power(X_test - X_pred, 2), axis=1)
+
+# Determine threshold for anomalies (95th percentile)
+threshold = np.percentile(mse, 95)
+y_pred = (mse > threshold).astype(int)
+
+print(f"\nReconstruction Error Threshold: {threshold:.5f}")
+print(f"Detected Anomalies (Potential Frauds): {np.sum(y_pred)}")
+
+# ============================================================
+# STEP 6: VISUALIZE RESULTS
+# ============================================================
+plt.figure(figsize=(8, 5))
+plt.hist(mse, bins=50, color='skyblue', edgecolor='black')
+plt.axvline(threshold, color='r', linestyle='--', label='Threshold')
+plt.title("Reconstruction Error Distribution")
+plt.xlabel("Mean Squared Error")
+plt.ylabel("Frequency")
+plt.legend()
+plt.show()
+
+plt.figure(figsize=(6, 4))
+plt.boxplot([mse[y_pred == 0], mse[y_pred == 1]], labels=['Normal', 'Fraud'])
+plt.title("Reconstruction Error: Normal vs Fraud")
+plt.ylabel("Reconstruction Error (MSE)")
+plt.show()
+
+print("\n✅ Outlier Detection Completed Successfully!")
