@@ -1,0 +1,17 @@
+import numpy as np
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Embedding
+
+#Tokenize the text
+tokenizer = Tokenizer(char_level=True) #char_level=True to tokenize characters
+tokenizer.fit_on_texts([text])
+…              metrics=['accuracy'])
+
+# 4. Train the Model
+#Reshape y to be 2D
+y = np.expand_dims(y, axis=-1)
+
+#Train the model
+model.fit(X, y, epochs=10, batch_size=64)
