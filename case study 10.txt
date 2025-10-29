@@ -1,0 +1,78 @@
+import tensorflow as tf
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+
+#LoadCIFAR-10dataset
+(x_train,y_train),(x_test,y_test) =cifar10.load_data()
+
+#Normalizepixelvaluestobebetween0and1
+x_train, x_test = x_train/ 255.0,x_test /255.0
+
+# Convert labels to one-hot encoding
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# 3. BuildtheCNNModel
+def build_model():
+    model=Sequential()
+    #ConvolutionalLayer1
+    model.add(Conv2D(32,(3,3),activation='relu',input_shape=(32,32,3)))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    #ConvolutionalLayer2
+    model.add(Conv2D(64,(3, 3),activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    #ConvolutionalLayer3
+    model.add(Conv2D(128,(3, 3),activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    # Flatten and Fully Connected Layers
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(10,activation='softmax'))
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+model=build_model()
+model.summary()
+
+# 4. TraintheModel
+history=model.fit(x_train,y_train,epochs=10,batch_size=64,validation_split=0.1, verbose=1)
+
+# 5. Evaluatethe Model
+test_loss,test_acc=model.evaluate(x_test,y_test,verbose=2)
+print(f"Test accuracy: {test_acc}")
+
+# 6. Make Prediction
+def predict_image(image):
+    image=np.expand_dims(image,axis=0)#Addbatchdimension
+    prediction = model.predict(image)
+    return np.argmax(prediction)
+
+#Testwithasampleimagefromthetestset
+sample_image = x_test[0]
+plt.imshow(sample_image)
+plt.title(f"Predicted class: {predict_image(sample_image)}")
+plt.show()
+
+# 7. Visualize Training History
+#Plottraining&validationaccuracyvalues
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.show()
+
+# Plot training & validation loss values
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.show()
