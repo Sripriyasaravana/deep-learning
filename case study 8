@@ -1,0 +1,58 @@
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, LSTM, Dense
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+
+# Sample data (tweets and corresponding labels)
+tweets = ["I love the new product!", "The update is terrible!", "Not bad, but could be better."]
+labels = [1, 0, 1] # 1 for positive, 0 for negative (simplified for demonstration)
+
+# Tokenize the tweets
+tokenizer = Tokenizer()
+tokenizer.fit_on_texts(tweets)
+sequences = tokenizer.texts_to_sequences(tweets)
+padded_sequences = pad_sequences(sequences, padding='post')
+
+# Build the RNN model
+vocab_size = len(tokenizer.word_index) + 1
+embedding_dim = 10
+model = Sequential([
+    Embedding(vocab_size, embedding_dim, input_length=padded_sequences.shape[1]),
+    LSTM(32),
+    Dense(1, activation='sigmoid') # Binary classification (positive/negative)
+])
+
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Train the model (Note: very small dataset for demonstration)
+# For a real application, you would need a much larger dataset
+model.fit(padded_sequences, np.array(labels), epochs=10, verbose=0)
+
+# Predict sentiment for the tweets
+preds = (model.predict(padded_sequences) > 0.5).astype(int).flatten()
+
+# Print predictions
+print("Sentiment Predictions:")
+for i, tweet in enumerate(tweets):
+    sentiment = "Positive 😊" if preds[i] == 1 else "Negative 😞"
+    print(f"{i+1}. {tweet}\n   → Predicted Sentiment: {sentiment}\n")
+
+# Create a graph based on tweets and their predicted sentiment
+G = nx.Graph()
+for i, tweet in enumerate(tweets):
+    sentiment = "Positive" if preds[i] == 1 else "Negative"
+    G.add_node(tweet, sentiment=sentiment)
+
+# Add edges (example: connecting consecutive tweets)
+for i in range(len(tweets) - 1):
+    G.add_edge(tweets[i], tweets[i + 1])
+
+# Visualize the graph
+colors = ['green' if preds[i] == 1 else 'red' for i in range(len(preds))]
+plt.figure(figsize=(8, 6))
+nx.draw(G, with_labels=True, node_color=colors, font_size=8, node_size=2000, edge_color='gray', width=0.5)
+plt.title("Tweet Sentiment Graph")
+plt.show()
