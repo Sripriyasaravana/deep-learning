@@ -1,105 +1,127 @@
-# Install required libraries
-# !pip install tweepy tensorflow keras nltk networkx matplotlib scikit-learn
+# ==========================================
+# 🚦 Traffic Sign Classification using CNN
+# German Traffic Sign Recognition Benchmark
+# ==========================================
 
-import re
-import nltk
-import networkx as nx
+!pip install tensorflow keras numpy matplotlib scikit-learn opendatasets --quiet
+
 import numpy as np
 import matplotlib.pyplot as plt
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Embedding, LSTM, Dense, Dropout
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+import tensorflow as tf
+from tensorflow.keras import layers, models
 from sklearn.model_selection import train_test_split
+import zipfile
 
-# -----------------------------
-# 1. Simulated Twitter Data
-# -----------------------------
-tweets = [
-    "I love the new product! It's amazing 😍",
-    "Not happy with the product, it broke in one day!",
-    "This is the best launch ever.",
-    "The product is okay, nothing special.",
-    "Terrible quality and slow support.",
-    "I’m impressed with the new features!",
-]
+# ==========================
+# STEP 1: Download dataset
+# ==========================
+# Dataset: https://www.kaggle.com/datasets/valentynsichkar/traffic-signs-preprocessed
+# ⚠️ Requires Kaggle API key (upload kaggle.json)
 
-labels = [1, 0, 1, 0, 0, 1]  # 1=positive, 0=negative
+from google.colab import files
+files.upload()  # upload your kaggle.json from Kaggle account
 
-# -----------------------------
-# 2. Preprocess Tweets
-# -----------------------------
-nltk.download('stopwords')
-from nltk.corpus import stopwords
-stop = set(stopwords.words('english'))
+!mkdir ~/.kaggle
+!mv kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+!kaggle datasets download -d valentynsichkar/traffic-signs-preprocessed
 
-def clean_tweet(text):
-    text = re.sub(r"http\S+|@\S+|#\S+", "", text)
-    text = re.sub(r"[^a-zA-Z\s]", "", text.lower())
-    return " ".join([w for w in text.split() if w not in stop])
+# ==========================
+# STEP 2: Extract dataset
+# ==========================
+with zipfile.ZipFile("traffic-signs-preprocessed.zip", 'r') as zip_ref:
+    zip_ref.extractall("traffic_sign_dataset")
 
-cleaned_tweets = [clean_tweet(t) for t in tweets]
+train_data = np.load('traffic_sign_dataset/train.p')
+test_data = np.load('traffic_sign_dataset/test.p', allow_pickle=True)
 
-# -----------------------------
-# 3. Tokenization and Padding
-# -----------------------------
-tokenizer = Tokenizer(num_words=5000)
-tokenizer.fit_on_texts(cleaned_tweets)
-X = tokenizer.texts_to_sequences(cleaned_tweets)
-X = pad_sequences(X, maxlen=10, padding='post')
+X_train, y_train = train_data['features'], train_data['labels']
+X_test, y_test = test_data['features'], test_data['labels']
 
-y = np.array(labels)
+print("Train:", X_train.shape, y_train.shape)
+print("Test:", X_test.shape, y_test.shape)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# ==========================
+# STEP 3: Normalize & split
+# ==========================
+X_train = X_train / 255.0
+X_test = X_test / 255.0
 
-# -----------------------------
-# 4. RNN (LSTM) Model
-# -----------------------------
-model = Sequential([
-    Embedding(input_dim=5000, output_dim=64, input_length=10),
-    LSTM(64, dropout=0.2, recurrent_dropout=0.2),
-    Dense(1, activation='sigmoid')
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train, y_train, test_size=0.2, random_state=42
+)
+
+print("Training:", X_train.shape)
+print("Validation:", X_val.shape)
+print("Test:", X_test.shape)
+
+# ==========================
+# STEP 4: Build CNN model
+# ==========================
+model = models.Sequential([
+    layers.Conv2D(32, (3,3), activation='relu', input_shape=(32,32,3)),
+    layers.MaxPooling2D((2,2)),
+
+    layers.Conv2D(64, (3,3), activation='relu'),
+    layers.MaxPooling2D((2,2)),
+
+    layers.Conv2D(128, (3,3), activation='relu'),
+    layers.Flatten(),
+
+    layers.Dense(128, activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(43, activation='softmax')
 ])
 
-model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
 model.summary()
 
-model.fit(X_train, y_train, epochs=10, batch_size=2, validation_split=0.2)
+# ==========================
+# STEP 5: Train model
+# ==========================
+history = model.fit(
+    X_train, y_train,
+    epochs=15,
+    batch_size=64,
+    validation_data=(X_val, y_val)
+)
 
-# -----------------------------
-# 5. Sentiment Predictions
-# -----------------------------
-pred_probs = model.predict(X)
-pred_labels = (pred_probs > 0.5).astype(int).flatten()
+# ==========================
+# STEP 6: Evaluate model
+# ==========================
+test_loss, test_acc = model.evaluate(X_test, y_test, verbose=2)
+print(f"\n✅ Test Accuracy: {test_acc*100:.2f}%")
 
-for t, p in zip(tweets, pred_labels):
-    sentiment = "Positive" if p == 1 else "Negative"
-    print(f"{t} → {sentiment}")
+# ==========================
+# STEP 7: Plot training curves
+# ==========================
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
+plt.plot(history.history['accuracy'], label='Train')
+plt.plot(history.history['val_accuracy'], label='Validation')
+plt.title('Accuracy')
+plt.legend()
 
-# -----------------------------
-# 6. Build Network Graph
-# -----------------------------
-# Example: nodes are tweets, edges connect tweets with similar sentiment
-G = nx.Graph()
+plt.subplot(1,2,2)
+plt.plot(history.history['loss'], label='Train')
+plt.plot(history.history['val_loss'], label='Validation')
+plt.title('Loss')
+plt.legend()
+plt.show()
 
-for i, tweet in enumerate(tweets):
-    G.add_node(i, label=tweet, sentiment=pred_labels[i])
+# ==========================
+# STEP 8: Visualize predictions
+# ==========================
+predictions = model.predict(X_test)
+y_pred = np.argmax(predictions, axis=1)
 
-# Connect tweets with same sentiment
-for i in range(len(tweets)):
-    for j in range(i + 1, len(tweets)):
-        if pred_labels[i] == pred_labels[j]:
-            G.add_edge(i, j)
-
-# -----------------------------
-# 7. Visualize Network
-# -----------------------------
-pos = nx.spring_layout(G)
-colors = ['green' if G.nodes[i]['sentiment'] == 1 else 'red' for i in G.nodes]
-
-plt.figure(figsize=(8, 6))
-nx.draw(G, pos, with_labels=True, node_color=colors, node_size=800, font_size=8)
-labels_dict = {i: f"{'😊' if G.nodes[i]['sentiment']==1 else '😡'}" for i in G.nodes}
-nx.draw_networkx_labels(G, pos, labels=labels_dict)
-plt.title("Tweet Sentiment Network Graph")
+plt.figure(figsize=(15, 3))
+for i in range(10):
+    plt.subplot(1, 10, i+1)
+    plt.imshow(X_test[i])
+    plt.title(f"T:{y_test[i]}\nP:{y_pred[i]}")
+    plt.axis('off')
 plt.show()
