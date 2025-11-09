@@ -1,65 +1,143 @@
-import tensorflow as tf
-from tensorflow.keras.datasets import mnist
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+# ===========================================================
+# ✉️ Handwritten Character Recognition using CNN
+# Automating postal code sorting (A–Z handwritten letters)
+# ===========================================================
+
+!pip install tensorflow keras numpy pandas matplotlib scikit-learn opendatasets --quiet
+
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
+import zipfile
 
-# Load the MNIST dataset
-(x_train, y_train), (x_test, y_test) = mnist.load_data()
+# ===========================================================
+# STEP 1: Download Dataset
+# ===========================================================
+# Dataset: A–Z Handwritten Characters Dataset (Kaggle)
+# https://www.kaggle.com/datasets/sachinpatel21/az-handwritten-alphabets-in-csv-format
+# ⚠️ Requires Kaggle API key – upload kaggle.json when prompted
 
-# Normalize the images to the range [0, 1]
-x_train = x_train.astype('float32') / 255.0
-x_test = x_test.astype('float32') / 255.0
+from google.colab import files
+files.upload()  # upload kaggle.json here
 
-# Reshape data to include channel dimension (1 for grayscale)
-x_train = x_train.reshape(-1, 28, 28, 1)
-x_test = x_test.reshape(-1, 28, 28, 1)
+!mkdir ~/.kaggle
+!mv kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+!kaggle datasets download -d sachinpatel21/az-handwritten-alphabets-in-csv-format
 
-# Convert labels to one-hot encoding
-y_train = to_categorical(y_train, 10)
-y_test = to_categorical(y_test, 10)
+# ===========================================================
+# STEP 2: Extract and Load Data
+# ===========================================================
+with zipfile.ZipFile("az-handwritten-alphabets-in-csv-format.zip", 'r') as zip_ref:
+    zip_ref.extractall("az_dataset")
 
-# Build the CNN Model
-def build_model():
-    model = Sequential()
-    # Convolutional Layer 1
-    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    # Convolutional Layer 2
-    model.add(Conv2D(64, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    # Convolutional Layer 3
-    model.add(Conv2D(128, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    # Flatten and Fully Connected Layers
-    model.add(Flatten())
-    model.add(Dense(128, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(10, activation='softmax'))
+data = pd.read_csv("az_dataset/A_Z Handwritten Data.csv").astype('float32')
+print("✅ Dataset loaded successfully!")
+print("Shape:", data.shape)
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    return model
+# ===========================================================
+# STEP 3: Data Preprocessing
+# ===========================================================
+X = data.drop('0', axis=1).values
+y = data['0'].values
 
-model = build_model()
+# Normalize pixel values to [0,1]
+X = X / 255.0
+
+# Reshape to (28, 28, 1) – grayscale images
+X = X.reshape(-1, 28, 28, 1)
+
+# Shuffle data
+X, y = shuffle(X, y, random_state=42)
+
+# Split into training & testing
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+print(f"Training samples: {X_train.shape[0]}")
+print(f"Testing samples:  {X_test.shape[0]}")
+
+# ===========================================================
+# STEP 4: Build CNN Model
+# ===========================================================
+model = models.Sequential([
+    layers.Conv2D(32, (3,3), activation='relu', input_shape=(28,28,1)),
+    layers.MaxPooling2D((2,2)),
+
+    layers.Conv2D(64, (3,3), activation='relu'),
+    layers.MaxPooling2D((2,2)),
+
+    layers.Conv2D(128, (3,3), activation='relu'),
+    layers.Flatten(),
+
+    layers.Dense(128, activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(26, activation='softmax')   # 26 classes (A–Z)
+])
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
 model.summary()
 
-# Train the Model
-history = model.fit(x_train, y_train, epochs=10, batch_size=64, validation_split=0.1, verbose=1)
+# ===========================================================
+# STEP 5: Train the CNN Model
+# ===========================================================
+history = model.fit(
+    X_train, y_train,
+    epochs=10,
+    batch_size=128,
+    validation_split=0.1,
+    verbose=1
+)
 
-# Evaluate the Model
-test_loss, test_acc = model.evaluate(x_test, y_test, verbose=2)
-print(f"Test accuracy: {test_acc}")
+# ===========================================================
+# STEP 6: Evaluate Model
+# ===========================================================
+test_loss, test_acc = model.evaluate(X_test, y_test, verbose=2)
+print(f"\n✅ Test Accuracy: {test_acc*100:.2f}%")
 
-# Make Predictions
-def predict_digit(image):
-    image = image.reshape(1, 28, 28, 1)  # Reshape to match model input
-    prediction = model.predict(image)
-    return np.argmax(prediction)
+# ===========================================================
+# STEP 7: Plot Accuracy & Loss
+# ===========================================================
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
+plt.plot(history.history['accuracy'], label='Train')
+plt.plot(history.history['val_accuracy'], label='Validation')
+plt.title('Model Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
 
-# Test with a sample image from the test set
-sample_image = x_test[0]
-plt.imshow(sample_image.reshape(28, 28), cmap='gray')
-plt.title(f"Predicted digit: {predict_digit(sample_image)}")
+plt.subplot(1,2,2)
+plt.plot(history.history['loss'], label='Train')
+plt.plot(history.history['val_loss'], label='Validation')
+plt.title('Model Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+
 plt.show()
+
+# ===========================================================
+# STEP 8: Visualize Predictions
+# ===========================================================
+predictions = model.predict(X_test)
+y_pred = np.argmax(predictions, axis=1)
+
+def label_to_char(label):
+    return chr(label + 65)  # Convert 0–25 → A–Z
+
+plt.figure(figsize=(15,3))
+for i in range(10):
+    plt.subplot(1,10,i+1)
+    plt.imshow(X_test[i].reshape(28,28), cmap='gray')
+    plt.title(f"T:{label_to_char(int(y_test[i]))}\nP:{label_to_char(int(y_pred[i]))}")
+    plt.axis('off')
+plt.show()
+
+print("✅ Model training and testing complete!")
