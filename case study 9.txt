@@ -1,58 +1,157 @@
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Embedding, LSTM, Dense
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tensorflow as tf
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-import matplotlib.pyplot as plt
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, SimpleRNN, Dense, Dropout
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+import nltk
+from nltk.corpus import stopwords
+import re
 import networkx as nx
-import numpy as np
 
-# Sample data (tweets and corresponding labels)
-tweets = ["I love the new product!", "The update is terrible!", "Not bad, but could be better."]
-labels = [1, 0, 1] # 1 for positive, 0 for negative (simplified for demonstration)
+# Download stopwords for preprocessing
+nltk.download('stopwords')
 
-# Tokenize the tweets
-tokenizer = Tokenizer()
-tokenizer.fit_on_texts(tweets)
-sequences = tokenizer.texts_to_sequences(tweets)
-padded_sequences = pad_sequences(sequences, padding='post')
+# ============================================================
+# STEP 1: Simulated Twitter dataset
+# ============================================================
 
-# Build the RNN model
-vocab_size = len(tokenizer.word_index) + 1
-embedding_dim = 10
+tweets = [
+    "I love the new product! Amazing performance and design!",
+    "This is the best thing Twitter has ever launched!",
+    "Absolutely fantastic, exceeded my expectations!",
+    "Not impressed, it crashes too often.",
+    "Terrible experience. Totally disappointed.",
+    "The product is okay, but could be better.",
+    "Superb quality and features, I’m really happy!",
+    "It’s a waste of money, very buggy.",
+    "Awesome! Works like a charm!",
+    "Horrible update. I hate it!",
+    "I think it’s decent, not bad at all.",
+    "The product is innovative and user-friendly.",
+    "Worst product ever. I want a refund.",
+    "Loving it! Definitely a game changer.",
+    "It’s slow and unresponsive sometimes.",
+    "Excellent job Twitter, I really enjoy using it!",
+    "Completely useless, why would anyone buy this?",
+    "Good product overall, I like the interface.",
+    "Mediocre update, expected more from Twitter.",
+    "Fantastic release! Keep it up!"
+]
+
+labels = [1,1,1,0,0,0,1,0,1,0,1,1,0,1,0,1,0,1,0,1]  # 1 = Positive, 0 = Negative
+data = pd.DataFrame({"tweet": tweets, "sentiment": labels})
+
+print("✅ Sample data loaded")
+print(data.head())
+
+# ============================================================
+# STEP 2: Text preprocessing
+# ============================================================
+
+stop_words = set(stopwords.words('english'))
+
+def clean_text(text):
+    text = re.sub(r'http\S+', '', text)
+    text = re.sub(r'[^A-Za-z\s]', '', text)
+    text = text.lower()
+    text = " ".join([word for word in text.split() if word not in stop_words])
+    return text
+
+data['clean_tweet'] = data['tweet'].apply(clean_text)
+
+# Tokenization and padding
+tokenizer = Tokenizer(num_words=5000, oov_token='<OOV>')
+tokenizer.fit_on_texts(data['clean_tweet'])
+sequences = tokenizer.texts_to_sequences(data['clean_tweet'])
+padded = pad_sequences(sequences, maxlen=20, padding='post')
+
+X = np.array(padded)
+y = np.array(data['sentiment'])
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# ============================================================
+# STEP 3: Build RNN model
+# ============================================================
+
 model = Sequential([
-    Embedding(vocab_size, embedding_dim, input_length=padded_sequences.shape[1]),
-    LSTM(32),
-    Dense(1, activation='sigmoid') # Binary classification (positive/negative)
+    Embedding(input_dim=5000, output_dim=64, input_length=20),
+    SimpleRNN(64, activation='tanh'),
+    Dropout(0.3),
+    Dense(32, activation='relu'),
+    Dense(1, activation='sigmoid')
 ])
 
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.summary()
 
-# Train the model (Note: very small dataset for demonstration)
-# For a real application, you would need a much larger dataset
-model.fit(padded_sequences, np.array(labels), epochs=10, verbose=0)
+# ============================================================
+# STEP 4: Train RNN
+# ============================================================
 
-# Predict sentiment for the tweets
-preds = (model.predict(padded_sequences) > 0.5).astype(int).flatten()
+history = model.fit(X_train, y_train, epochs=10, batch_size=4, validation_split=0.2, verbose=1)
 
-# Print predictions
-print("Sentiment Predictions:")
-for i, tweet in enumerate(tweets):
-    sentiment = "Positive 😊" if preds[i] == 1 else "Negative 😞"
-    print(f"{i+1}. {tweet}\n   → Predicted Sentiment: {sentiment}\n")
+# ============================================================
+# STEP 5: Evaluate model
+# ============================================================
 
-# Create a graph based on tweets and their predicted sentiment
+loss, acc = model.evaluate(X_test, y_test, verbose=0)
+print(f"\n✅ Test Accuracy: {acc*100:.2f}%")
+
+# Classification report
+y_pred = (model.predict(X_test) > 0.5).astype("int32")
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=["Negative", "Positive"]))
+
+# ============================================================
+# STEP 6: Plot Accuracy and Loss
+# ============================================================
+
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
+plt.plot(history.history['accuracy'], label='Train')
+plt.plot(history.history['val_accuracy'], label='Validation')
+plt.title('Model Accuracy')
+plt.legend()
+
+plt.subplot(1,2,2)
+plt.plot(history.history['loss'], label='Train')
+plt.plot(history.history['val_loss'], label='Validation')
+plt.title('Model Loss')
+plt.legend()
+plt.show()
+
+# ============================================================
+# STEP 7: Sentiment Network Graph Visualization
+# ============================================================
+
+# Create graph: nodes = tweets, edges = sentiment similarity
 G = nx.Graph()
-for i, tweet in enumerate(tweets):
-    sentiment = "Positive" if preds[i] == 1 else "Negative"
-    G.add_node(tweet, sentiment=sentiment)
 
-# Add edges (example: connecting consecutive tweets)
-for i in range(len(tweets) - 1):
-    G.add_edge(tweets[i], tweets[i + 1])
+for i, tweet in enumerate(data['tweet']):
+    G.add_node(i, label=tweet, sentiment='Positive' if labels[i] else 'Negative')
 
-# Visualize the graph
-colors = ['green' if preds[i] == 1 else 'red' for i in range(len(preds))]
-plt.figure(figsize=(8, 6))
-nx.draw(G, with_labels=True, node_color=colors, font_size=8, node_size=2000, edge_color='gray', width=0.5)
-plt.title("Tweet Sentiment Graph")
+# Add edges between tweets with same sentiment
+for i in range(len(labels)):
+    for j in range(i+1, len(labels)):
+        if labels[i] == labels[j]:
+            G.add_edge(i, j)
+
+plt.figure(figsize=(10,8))
+pos = nx.spring_layout(G, seed=42)
+colors = ['green' if labels[i]==1 else 'red' for i in range(len(labels))]
+
+nx.draw(G, pos, node_color=colors, with_labels=False, node_size=500, alpha=0.8)
+for i, tweet in enumerate(data['tweet']):
+    plt.text(pos[i][0], pos[i][1]+0.03, f"{'P' if labels[i]==1 else 'N'}", 
+             fontsize=9, ha='center', color='black')
+
+plt.title("📊 Sentiment Network Graph (Green = Positive, Red = Negative)")
 plt.show()
